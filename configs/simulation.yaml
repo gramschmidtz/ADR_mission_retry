@@ -1,0 +1,67 @@
+# ============================================================
+# 시뮬레이션 설정
+# ============================================================
+
+training_data:
+  num_samples: 89700
+  debris_yaml: "configs/random500debris.yaml"   # 전이데이터 생성에 사용
+  output_path: "data/training_data.csv"
+  # α=0: TOF 최소화, α=1: 추진제 최소화, α=0.5: 균형
+  alpha: 0.0
+
+# ============================================================
+# debris 무작위 생성 설정 (make_random_debris.py 에서 사용)
+# ============================================================
+debris_generation:
+  # 생성할 debris set 목록
+  #   each item:
+  #     n      : 생성할 debris 수
+  #     output : 저장할 yaml 경로
+  #     seed   : random seed (재현성)
+  sets:
+    - n: 500
+      output: "configs/random500debris.yaml"
+      seed:   20260512
+    - n: 5000
+      output: "configs/random5000debris.yaml"
+      seed:   20260513
+
+  # 분포 (논문 §3.1 / §4)
+  altitude_km:
+    min: 500.0
+    max: 1500.0
+  raan_deg:
+    min: 0.0
+    max: 360.0
+  mass_kg:
+    min: 100.0
+    max: 300.0
+  # 고정 값
+  inclination_deg: 87.9
+  eccentricity:    0.0
+  arg_perigee_deg: 0.0
+  # 진근점 이상 (true anomaly) 도 uniform [0, 360]
+  # nu 는 자동으로 [0, 360] 에서 sampling
+
+visualization:
+  debris_pair: ["debris0001", "debris0002"]
+  # phasing orbit 고도 [km]
+  #   "optimal" → minimize_scalar 로 최적 h_P 자동 탐색
+  #   숫자 (예: 500.0) → 그 고도로 고정해서 계산
+  h_P_km: "optimal"
+  save_fig: true
+  output_dir: "results/figures"
+
+search:
+  # h_P 탐색 범위 [km]
+  h_P_min_km: 390.0
+  h_P_max_km: 2000.0
+  h_step_km: 50.0
+  # raan 탐색 범위 [deg]
+  raan_min_deg: -100.0
+  raan_max_deg: +260.0
+  raan_step_deg: 2.0
+  # alpha 탐색 범위 (sweep_alpha_raan_hp.py 에서 사용)
+  alpha_min: 0.0
+  alpha_max: 1.0
+  alpha_step: 0.05

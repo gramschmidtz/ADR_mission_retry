@@ -1,0 +1,88 @@
+# ============================================================
+# MLP 학습 설정 (논문 §3 ANN 재현용)
+# ============================================================
+
+data:
+  csv_path: "data/training_data_alpha0.0.csv"
+  # 80/10/10 split — 무작위 셔플
+  split:
+    train: 0.80
+    val:   0.10
+    test:  0.10
+  seed: 42                # split / shuffle / weight init 모두에 적용
+
+# ============================================================
+# 정규화 (normalization)
+#
+# 입력 6 : (x - min) / (max - min)        → [0, 1]
+# 출력 2 :
+#   m_prop : (x - min) / (max - min)      → [0, 1]
+#   TOF    : log1p 후 (x - min)/(max-min) → long-tail 압축 후 [0, 1]
+#
+# min/max 는 학습 데이터 (train split) 의 통계를 사용해 자동 산출.
+# inference 시 inverse transform 적용 — 파라미터는 scaler.npz 로 함께 저장.
+# ============================================================
+normalization:
+  inputs:
+    method: "minmax"      # "minmax" | "zscore" | "none"
+  outputs:
+    m_prop:
+      transform: "minmax" # "minmax" | "zscore" | "none"
+    TOF:
+      transform: "log1p_minmax"   # log1p 후 minmax — long-tail 압축
+
+# ============================================================
+# 모델 구조
+# ============================================================
+model:
+  type: "mlp"
+  input_dim:  6           # h_D1, RAAN_D1, m_D1, h_D2, RAAN_D2, m_SC
+  output_dim: 2           # m_prop, TOF (정규화된)
+  hidden_layers: [64, 64, 64]   # 노드 수 list. 길이 = layer 수.
+  activation: "tanh"      # "tanh" | "relu" | "gelu" | "silu"
+  dropout: 0.0            # 각 hidden layer 뒤 dropout 확률
+  output_activation: null # 회귀 → null (linear)
+
+# ============================================================
+# 학습 hyperparameter
+# ============================================================
+train:
+  batch_size: 256
+  max_epochs: 200
+  num_workers: 0          # DataLoader worker 수. 0 = main process.
+                          # CPU 코어 충분하면 4 정도 권장.
+
+  optimizer:
+    name: "adam"          # "adam" | "adamw" | "sgd"
+    lr: 1.0e-3
+    weight_decay: 0.0
+
+  # LR scheduler — val loss 가 patience epoch 동안 안 줄면 lr × factor
+  scheduler:
+    name: "reduce_on_plateau"
+    factor: 0.5
+    patience: 10
+    min_lr: 1.0e-6
+
+  # Early stopping — val loss 가 patience epoch 동안 안 줄면 학습 중단
+  early_stopping:
+    enable: true
+    patience: 20
+    min_delta: 1.0e-5
+
+  # Loss 함수 — m_prop 과 TOF 각각의 MSE 를 합산
+  loss:
+    name: "mse"
+
+# ============================================================
+# 로깅 & 체크포인트
+# ============================================================
+logging:
+  # tensorboard 로그 디렉토리. run 별로 timestamp 가 자동 부여됨.
+  log_root: "results/runs"
+  # 체크포인트 root. timestamp 별 폴더가 자동 생성됨.
+  ckpt_root: "results/checkpoints"
+  # epoch 마다 기록할 산점도 / 히스토그램의 sample 수 상한
+  scatter_max_points: 5000
+  # validation 시 위 plot 들 매 N epoch 마다 기록 (1 = 매 epoch)
+  scatter_every_n_epochs: 5

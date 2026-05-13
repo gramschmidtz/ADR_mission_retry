@@ -1,0 +1,104 @@
+debris0001:
+  alt0_km: 637.16
+  e: 0.0
+  i: 87.9
+  RAAN: 287.50
+  AOP: 0.0
+  nu: 108.01
+  mass: 163.40
+debris0002:
+  alt0_km: 512.37
+  e: 0.0
+  i: 87.9
+  RAAN: 283.0
+  AOP: 0.0
+  nu: 329.54
+  mass: 275.27
+debris0003:
+  alt0_km: 585.17
+  e: 0.0
+  i: 87.9
+  RAAN: 275.30
+  AOP: 0.0
+  nu: 63.27
+  mass: 138.41
+debris0004:
+  alt0_km: 533.43
+  e: 0.0
+  i: 87.9
+  RAAN: 280.31
+  AOP: 0.0
+  nu: 219.55
+  mass: 155.50
+debris0005:
+  alt0_km: 644.38
+  e: 0.0
+  i: 87.9
+  RAAN: 256.52
+  AOP: 0.0
+  nu: 229.25
+  mass: 212.14
+debris0006:
+  alt0_km: 738.66
+  e: 0.0
+  i: 87.9
+  RAAN: 230.86
+  AOP: 0.0
+  nu: 230.15
+  mass: 176.71
+debris0007:
+  alt0_km: 501.13
+  e: 0.0
+  i: 87.9
+  RAAN: 274.57
+  AOP: 0.0
+  nu: 140.27
+  mass: 106.99
+debris0008:
+  alt0_km: 557.63
+  e: 0.0
+  i: 87.9
+  RAAN: 253.73
+  AOP: 0.0
+  nu: 346.58
+  mass: 179.98
+debris0009:
+  alt0_km: 516.09
+  e: 0.0
+  i: 87.9
+  RAAN: 259.77
+  AOP: 0.0
+  nu: 215.44
+  mass: 105.56
+debris0010:
+  alt0_km: 705.37
+  e: 0.0
+  i: 87.9
+  RAAN: 186.35
+  AOP: 0.0
+  nu: 209.13
+  mass: 170.46
+debris0011:
+  alt0_km: 588.68
+  e: 0.0
+  i: 87.9
+  RAAN: 221.62
+  AOP: 0.0
+  nu: 191.32
+  mass: 191.09
+debris0012:
+  alt0_km: 600.20
+  e: 0.0
+  i: 87.9
+  RAAN: 208.13
+  AOP: 0.0
+  nu: 69.62
+  mass: 171.12
+debris0013:
+  alt0_km: 526.06
+  e: 0.0
+  i: 87.9
+  RAAN: 244.28
+  AOP: 0.0
+  nu: 13.42
+  mass: 175.02

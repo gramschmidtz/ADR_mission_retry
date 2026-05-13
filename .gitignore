@@ -1,0 +1,79 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+pip-wheel-metadata/
+
+# virtualenv / conda
+venv/
+.venv/
+env/
+.env
+
+# ============================================================
+# OS / 편집기
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# 본 프로젝트 산출물 (재현 가능 — 저장소에 올리지 않음)
+# ============================================================
+
+# 학습 데이터 (수십 MB ~ 수백 MB) — generate_training_data.py 로 재생성
+data/*.csv
+data/*.meta.yaml
+data/*.csv.bak
+data/*.csv.bak[0-9]*
+
+# 학습 산출물 (체크포인트 / TensorBoard logs) — train_ann.py 로 재생성
+results/checkpoints/
+results/runs/
+
+# Sequence search 결과 (run_sequence_search.py / evaluate_sequence.py 로 재생성)
+results/sequences/
+
+# Sweep / 진단 figure (스크립트로 재생성)
+results/figures/
+
+# 로그 파일
+*.log
+
+# ============================================================
+# debris yaml (자동 생성 — make_random_debris.py 로 재생성)
+# 단, simulation.yaml 의 debris_generation 섹션 (seed 포함) 이 같으면
+# 완전 재현 가능. 작은 파일이므로 random500debris.yaml 만 트래킹해도 됨.
+# 본 .gitignore 는 두 개 모두 생성물로 간주.
+# ============================================================
+configs/random500debris.yaml
+configs/random5000debris.yaml
+
+# ============================================================
+# Jupyter / IPython
+# ============================================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ============================================================
+# 임시 파일
+# ============================================================
+*.tmp
+*.bak
+*.bak[0-9]*
+tmp/
+scratch/

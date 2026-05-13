@@ -1,0 +1,16 @@
+debris0001:
+  alt0_km: 800.0
+  e: 0.0
+  i: 87.9
+  RAAN: 0.0
+  AOP: 0.0
+  nu: 108.01
+  mass: 270.37
+debris0002:
+  alt0_km: 500.0
+  e: 0.0
+  i: 87.9
+  RAAN: 0.0
+  AOP: 0.0
+  nu: 329.54
+  mass: 156.50

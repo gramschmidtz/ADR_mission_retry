@@ -453,6 +453,8 @@ class Trainer:
 
         # TensorBoard
         self.writer.add_scalar('test/loss_total',    te['loss_total'])
+        self.writer.add_scalar('test/loss_m_prop',   te['loss_m_prop'])
+        self.writer.add_scalar('test/loss_TOF',      te['loss_TOF'])
         self.writer.add_scalar('test/m_prop_R2',     r2_mp)
         self.writer.add_scalar('test/TOF_R2',        r2_tof)
         self.writer.add_scalar('test/m_prop_MAE_kg', mae_mp)

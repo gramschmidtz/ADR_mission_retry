@@ -37,10 +37,22 @@ from src.sequence_search import (
 # Sequence 결과 → csv (step 별 ANN 예측값 기록)
 # ──────────────────────────────────────────────────────────────
 def save_sequence_csv(seq, darr, out_path):
+    """
+    sequence search 결과를 csv 로 저장 (step 별 ANN 예측값).
+
+    컬럼 용어 :
+      src  = source       출발 debris (chaser 가 disposal 로 데려갈 debris)
+      dst  = destination  도착 debris (chaser 가 다음 잡으러 가는 debris)
+      cum  = cumulative   누적 (step 1..현재까지의 합)
+      RAAN_day0_deg : debris yaml 의 초기 (mission t=0) RAAN. sequence search
+                      시점의 propagated RAAN 이 아니라 정적 정보.
+    """
     cols = [
         'step',
         'src_idx', 'dst_idx', 'src_name', 'dst_name',
         'src_alt_km', 'dst_alt_km',
+        'src_RAAN_day0_deg', 'dst_RAAN_day0_deg',
+        'src_mass_kg', 'dst_mass_kg',
         't_start_day', 't_end_day', 't_capture_end_day',
         'ann_TOF_day', 'ann_m_prop_kg', 'cum_ann_m_prop_kg',
     ]
@@ -56,6 +68,10 @@ def save_sequence_csv(seq, darr, out_path):
             'dst_name'          : darr.names[step.dst_idx],
             'src_alt_km'        : f"{step.src_alt_km:.3f}",
             'dst_alt_km'        : f"{step.dst_alt_km:.3f}",
+            'src_RAAN_day0_deg' : f"{darr.RAAN0_deg[step.src_idx]:.4f}",
+            'dst_RAAN_day0_deg' : f"{darr.RAAN0_deg[step.dst_idx]:.4f}",
+            'src_mass_kg'       : f"{darr.mass_kg [step.src_idx]:.4f}",
+            'dst_mass_kg'       : f"{darr.mass_kg [step.dst_idx]:.4f}",
             't_start_day'       : f"{step.t_start_s / DAY:.3f}",
             't_end_day'         : f"{step.t_end_s   / DAY:.3f}",
             't_capture_end_day' : f"{step.t_capture_end_s / DAY:.3f}",

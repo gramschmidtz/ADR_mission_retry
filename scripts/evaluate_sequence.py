@@ -216,7 +216,15 @@ def reevaluate_with_solver(seq_rows, debris_dict, params, alpha):
             'dst_name'     : dst_name,
             'src_alt_km'   : d_src['alt0_km'],
             'dst_alt_km'   : d_dst['alt0_km'],
-            't_start_s'    : t_start_sol,  # solver 기준 시각으로 저장
+            # debris yaml 의 초기 (t=0, mission 시작 시점) RAAN 값.
+            # 시각화나 Table 3 같은 출력에서 보기 위함.
+            'src_RAAN_day0_deg' : float(d_src['RAAN']),
+            'dst_RAAN_day0_deg' : float(d_dst['RAAN']),
+            # debris 질량 (참고용 — chaser 가 잡으러 가는 dst 의 질량이 핵심)
+            'src_mass_kg'  : float(d_src['mass']),
+            'dst_mass_kg'  : float(d_dst['mass']),
+            # 시각 (solver 누적 기준)
+            't_start_s'    : t_start_sol,
             't_start_csv_s': t_start_csv,  # 참고용 (ANN 기준)
             'm_SC_kg'      : m_SC,
             'ann_TOF_s'    : ann_TOF,
@@ -410,52 +418,85 @@ def print_error_summary(steps):
 # Step 별 결과 csv 저장
 # ──────────────────────────────────────────────────────────────
 def save_eval_csv(steps, out_path):
+    """
+    sequence 의 step 별 상세 정보를 csv 로 저장.
+
+    컬럼 순서 (사용자 요청 기준) :
+      step, src_idx, dst_idx, src_name, dst_name,
+      src_alt_km, dst_alt_km, src_RAAN_day0_deg, dst_RAAN_day0_deg,
+      src_mass_kg, dst_mass_kg, m_SC_kg,
+      t_start_day, t_end_day, t_capture_end_day,
+      ann_TOF_day, sol_TOF_day, err_TOF_pct,
+      ann_m_prop_kg, sol_m_prop_kg, err_m_prop_pct,
+      cum_sol_m_prop_kg,
+      sol_h_P_km,
+      sol_mp_T1, sol_mp_T2a, sol_mp_drag, sol_mp_T2b,
+      t_T1_end_day, t_T2a_end_day, t_Tp_end_day, t_T2b_end_day
+
+    용어 :
+      src = source     출발 debris (chaser 가 disposal 로 데려가는 debris)
+      dst = destination 도착 debris (chaser 가 다음에 잡으러 가는 debris)
+      cum = cumulative 누적
+      RAAN_day0_deg    : debris yaml 의 초기 (mission 시작 시각 t=0) RAAN
+                         (sequence search 시점의 propagated RAAN 이 아님)
+    """
     cols = [
-        'step', 'src_idx', 'dst_idx', 'src_name', 'dst_name',
-        'src_alt_km', 'dst_alt_km', 't_start_day', 'm_SC_kg',
-        'ann_m_prop_kg', 'sol_m_prop_kg', 'err_m_prop_pct',
+        'step',
+        'src_idx', 'dst_idx', 'src_name', 'dst_name',
+        'src_alt_km', 'dst_alt_km',
+        'src_RAAN_day0_deg', 'dst_RAAN_day0_deg',
+        'src_mass_kg', 'dst_mass_kg',
+        'm_SC_kg',
+        't_start_day', 't_end_day', 't_capture_end_day',
         'ann_TOF_day', 'sol_TOF_day', 'err_TOF_pct',
+        'ann_m_prop_kg', 'sol_m_prop_kg', 'err_m_prop_pct',
+        'cum_sol_m_prop_kg',
         'sol_h_P_km',
-        # phase 별 추진제 분해 (solver) [kg]
         'sol_mp_T1', 'sol_mp_T2a', 'sol_mp_drag', 'sol_mp_T2b',
-        # phase 별 시간 절대시각 [day]
         't_T1_end_day', 't_T2a_end_day', 't_Tp_end_day', 't_T2b_end_day',
-        't_capture_end_day',
     ]
     os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
+    cum_sol = 0.0
     with open(out_path, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for s in steps:
+            cum_sol += s['sol_m_prop_kg']
             w.writerow({
-                'step'         : s['step'],
-                'src_idx'      : s['src_idx'],
-                'dst_idx'      : s['dst_idx'],
-                'src_name'     : s['src_name'],
-                'dst_name'     : s['dst_name'],
-                'src_alt_km'   : f"{s['src_alt_km']:.3f}",
-                'dst_alt_km'   : f"{s['dst_alt_km']:.3f}",
-                't_start_day'  : f"{s['t_start_s']/DAY:.3f}",
-                'm_SC_kg'      : f"{s['m_SC_kg']:.4f}",
-                'ann_m_prop_kg': f"{s['ann_m_prop_kg']:.6f}",
-                'sol_m_prop_kg': f"{s['sol_m_prop_kg']:.6f}",
-                'err_m_prop_pct': (f"{s['err_m_prop_pct']:+.4f}"
-                                    if np.isfinite(s['err_m_prop_pct']) else ''),
-                'ann_TOF_day'  : f"{s['ann_TOF_s']/DAY:.3f}",
-                'sol_TOF_day'  : f"{s['sol_TOF_s']/DAY:.3f}",
-                'err_TOF_pct'  : (f"{s['err_TOF_pct']:+.4f}"
-                                  if np.isfinite(s['err_TOF_pct']) else ''),
-                'sol_h_P_km'   : (f"{s['sol_h_P_km']:.2f}"
-                                  if np.isfinite(s['sol_h_P_km']) else ''),
-                'sol_mp_T1'    : f"{s.get('sol_mp_T1',   0.0):.6f}",
-                'sol_mp_T2a'   : f"{s.get('sol_mp_T2a',  0.0):.6f}",
-                'sol_mp_drag'  : f"{s.get('sol_mp_drag', 0.0):.6f}",
-                'sol_mp_T2b'   : f"{s.get('sol_mp_T2b',  0.0):.6f}",
-                't_T1_end_day' : f"{s['t_T1_end_s']/DAY:.3f}",
-                't_T2a_end_day': f"{s['t_T2a_end_s']/DAY:.3f}",
-                't_Tp_end_day' : f"{s['t_Tp_end_s']/DAY:.3f}",
-                't_T2b_end_day': f"{s['t_T2b_end_s']/DAY:.3f}",
-                't_capture_end_day': f"{s['t_capture_end_s']/DAY:.3f}",
+                'step'              : s['step'],
+                'src_idx'           : s['src_idx'],
+                'dst_idx'           : s['dst_idx'],
+                'src_name'          : s['src_name'],
+                'dst_name'          : s['dst_name'],
+                'src_alt_km'        : f"{s['src_alt_km']:.3f}",
+                'dst_alt_km'        : f"{s['dst_alt_km']:.3f}",
+                'src_RAAN_day0_deg' : f"{s['src_RAAN_day0_deg']:.4f}",
+                'dst_RAAN_day0_deg' : f"{s['dst_RAAN_day0_deg']:.4f}",
+                'src_mass_kg'       : f"{s['src_mass_kg']:.4f}",
+                'dst_mass_kg'       : f"{s['dst_mass_kg']:.4f}",
+                'm_SC_kg'           : f"{s['m_SC_kg']:.4f}",
+                't_start_day'       : f"{s['t_start_s']/DAY:.3f}",
+                't_end_day'         : f"{s['t_T2b_end_s']/DAY:.3f}",
+                't_capture_end_day' : f"{s['t_capture_end_s']/DAY:.3f}",
+                'ann_TOF_day'       : f"{s['ann_TOF_s']/DAY:.3f}",
+                'sol_TOF_day'       : f"{s['sol_TOF_s']/DAY:.3f}",
+                'err_TOF_pct'       : (f"{s['err_TOF_pct']:+.4f}"
+                                       if np.isfinite(s['err_TOF_pct']) else ''),
+                'ann_m_prop_kg'     : f"{s['ann_m_prop_kg']:.6f}",
+                'sol_m_prop_kg'     : f"{s['sol_m_prop_kg']:.6f}",
+                'err_m_prop_pct'    : (f"{s['err_m_prop_pct']:+.4f}"
+                                       if np.isfinite(s['err_m_prop_pct']) else ''),
+                'cum_sol_m_prop_kg' : f"{cum_sol:.6f}",
+                'sol_h_P_km'        : (f"{s['sol_h_P_km']:.2f}"
+                                       if np.isfinite(s['sol_h_P_km']) else ''),
+                'sol_mp_T1'         : f"{s.get('sol_mp_T1',   0.0):.6f}",
+                'sol_mp_T2a'        : f"{s.get('sol_mp_T2a',  0.0):.6f}",
+                'sol_mp_drag'       : f"{s.get('sol_mp_drag', 0.0):.6f}",
+                'sol_mp_T2b'        : f"{s.get('sol_mp_T2b',  0.0):.6f}",
+                't_T1_end_day'      : f"{s['t_T1_end_s']/DAY:.3f}",
+                't_T2a_end_day'     : f"{s['t_T2a_end_s']/DAY:.3f}",
+                't_Tp_end_day'      : f"{s['t_Tp_end_s']/DAY:.3f}",
+                't_T2b_end_day'     : f"{s['t_T2b_end_s']/DAY:.3f}",
             })
 
 

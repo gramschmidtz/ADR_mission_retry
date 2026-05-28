@@ -164,9 +164,9 @@ def delta_v_hohmann_one_way(a1, a2, mu):
 def delta_v_altitude_change(h1_km, h2_km, params):
     """
     두 원형 궤도 사이 고도 변경에 필요한 총 ΔV를 계산한다.
-    Hohmann 전이의 두 번 번인 합산.
+    (지수대기모델은 사용하지 않음.)
 
-    a1 → (전이타원) → a2
+    a1 → (전이나선) → a2
 
     Parameters
     ----------
@@ -186,24 +186,25 @@ def delta_v_altitude_change(h1_km, h2_km, params):
 
     # 출발 원궤도 속도
     v_circ1 = np.sqrt(mu / a1)
-    # 전이 타원에서 출발 지점 속도 (원지점 또는 근지점)
-    v_trans1 = np.sqrt(mu * (2.0 / a1 - 1.0 / a_transfer))
+    # # 전이 타원에서 출발 지점 속도 (원지점 또는 근지점)
+    # v_trans1 = np.sqrt(mu * (2.0 / a1 - 1.0 / a_transfer))
 
     # 도착 원궤도 속도
     v_circ2 = np.sqrt(mu / a2)
-    # 전이 타원에서 도착 지점 속도
-    v_trans2 = np.sqrt(mu * (2.0 / a2 - 1.0 / a_transfer))
+    # # 전이 타원에서 도착 지점 속도
+    # v_trans2 = np.sqrt(mu * (2.0 / a2 - 1.0 / a_transfer))
 
-    dv1 = abs(v_trans1 - v_circ1)
-    dv2 = abs(v_circ2 - v_trans2)
-    return dv1 + dv2
+    # dv1 = abs(v_trans1 - v_circ1)
+    # dv2 = abs(v_circ2 - v_trans2)
+
+    # return dv1 + dv2
+
+    return abs(v_circ2 - v_circ1)
 
 
 def tof_tsiolkovsky(h1_km, h2_km, m_before_kg, params):
     """
     저추력(low-thrust) 연속 연소로 고도 h1 → h2 로 이동하는 데 걸리는 시간 [s].
-
-    이전 함수명: tof_hohmann (오해 방지 위해 변경 — Hohmann transfer 가 아님)
 
     저추력 ΔV 누적 식 (질량이 시간에 따라 감소함을 정확히 반영) :
 

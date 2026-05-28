@@ -613,7 +613,7 @@ def main():
         constants_path='configs/constants.yaml',
         simulation_path='configs/simulation.yaml',
     )
-    debris_all = load_debris_list(sim_cfg['training_data']['debris_yaml'])
+    debris_all = load_debris_list(sim_cfg['visualization']['debris_file'])
 
     # 시각화 대상 debris 쌍
     viz_cfg = sim_cfg['visualization']

@@ -72,7 +72,7 @@ def main():
         simulation_path="configs/simulation.yaml",
     )
     alpha = sim_cfg["training_data"]["alpha"]
-    debris_yaml = sim_cfg["training_data"]["debris_yaml"]
+    debris_yaml = sim_cfg["visualization"]["debris_file"]
     debris_list = load_debris_list(debris_yaml)
 
     name1, name2 = DEBRIS_PAIR

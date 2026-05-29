@@ -373,17 +373,37 @@ def build_timeline(result, debris1, debris2, params):
         RAAN_cur    = sc_seg[-1]
         RAAN_D2_cur = d2_seg[-1]
 
-    # ── Thrust ON/OFF ──
+    # ── Thrust force [mN] ──
+    # 고도 변경 구간(T1, T2a, T2b) : 최대 추력 T_max
+    # 고도 유지 구간(Tp, Ts)       : 대기항력 보상에 필요한 추력
+    #   F_drag = m · |a_drag(m)| 이고 a_drag = F_drag/m 이므로 F_drag 는
+    #   질량에 무관한 상수. drag_dv_circular 가 dv_drag = a_drag(m_start)·T 로
+    #   계산했으므로 :
+    #       F_drag = dv_drag · m_start / T
+    #   로 역산 가능. T1·T2b 의 ~21 mN 에 비해 보통 매우 작음
+    #   (h=390 km 에서 ~2.5 mN, h=800 km 에서 ~0.1 mN 등).
+    T_max_mN = params['T_max'] * 1000.0   # N → mN
+
+    if Tp > 0 and result.get('dv_drag', 0) > 0:
+        F_Tp_mN = phase['Tp']['m_start'] * result['dv_drag'] / Tp * 1000.0
+    else:
+        F_Tp_mN = 0.0
+
+    if Ts > 0 and result.get('dv_Ts_drag', 0) > 0:
+        F_Ts_mN = phase['Ts']['m_start'] * result['dv_Ts_drag'] / Ts * 1000.0
+    else:
+        F_Ts_mN = 0.0
+
+    # T2a 가 0초(= h_P=disposal)이면 추력 없음
+    F_T2a_mN = T_max_mN if T2a >= 1.0 else 0.0
+
     thrust_segs = [
-        np.ones(n_pts_list[0]),    # T1: ON
-        np.ones(n_pts_list[1]),    # T2a: ON (0이면 OFF)
-        np.zeros(n_pts_list[2]),   # Tp: OFF
-        np.ones(n_pts_list[3]),    # T2b: ON
-        np.zeros(n_pts_list[4]),   # Ts: OFF
+        np.full(n_pts_list[0], T_max_mN),   # T1  : full
+        np.full(n_pts_list[1], F_T2a_mN),   # T2a : full or 0
+        np.full(n_pts_list[2], F_Tp_mN),    # Tp  : drag 보상
+        np.full(n_pts_list[3], T_max_mN),   # T2b : full
+        np.full(n_pts_list[4], F_Ts_mN),    # Ts  : drag 보상
     ]
-    # T2a=0인 경우 (phasing = disposal orbit)
-    if T2a < 1.0:
-        thrust_segs[1] = np.zeros(n_pts_list[1])
 
     # ── 시간 축 생성 [days] ──
     t_segs = []
@@ -571,16 +591,43 @@ def plot_transfer(result, debris1, debris2, params):
     ax.legend(loc='upper right', fontsize=7)
     ax.grid(True, alpha=0.3)
 
-    # ── 패널 3: Thrust ON/OFF ──
+    # ── 패널 3: 추력 [mN] (실제 발생 추력) ──
+    T_max_mN = params['T_max'] * 1000.0
     ax = axes[2]
     draw_backgrounds(ax)
     draw_vlines(ax)
-    ax.fill_between(t, 0, thrust, step='mid', alpha=0.7, color='steelblue', label='Thrust')
-    ax.set_yticks([0, 1])
-    ax.set_yticklabels(['OFF', 'ON'])
-    ax.set_ylim(-0.1, 1.3)
-    ax.set_ylabel('Thrust')
-    ax.grid(True, alpha=0.3, axis='x')
+    ax.fill_between(t, 0, thrust, alpha=0.35, color='steelblue', step=None)
+    ax.plot(t, thrust, color='steelblue', lw=1.5)
+    ax.axhline(T_max_mN, color='red', ls=':', lw=0.8, alpha=0.7,
+               label=f'T_max = {T_max_mN:.1f} mN')
+
+    # 작은 drag 보상 추력 (Tp / Ts) 은 라벨로 정확한 값 표시
+    Tp_s    = result['Tp']
+    Ts_s    = result['Ts']
+    label_threshold = T_max_mN * 0.01   # T_max 의 1% 미만이면 라벨 생략
+    if Tp_s > 0 and result.get('dv_drag', 0) > 0:
+        F_Tp_mN = result['phase']['Tp']['m_start'] * result['dv_drag'] / Tp_s * 1000.0
+        if F_Tp_mN > label_threshold:
+            t_mid_Tp = (t_T2a_end + t_Tp_end) / 2
+            ax.annotate(f'{F_Tp_mN:.2f} mN',
+                        xy=(t_mid_Tp, F_Tp_mN),
+                        xytext=(t_mid_Tp, F_Tp_mN + T_max_mN * 0.10),
+                        ha='center', fontsize=7, color='#333',
+                        arrowprops=dict(arrowstyle='-', color='#888', lw=0.6))
+    if Ts_s > 0 and result.get('dv_Ts_drag', 0) > 0:
+        F_Ts_mN = result['phase']['Ts']['m_start'] * result['dv_Ts_drag'] / Ts_s * 1000.0
+        if F_Ts_mN > label_threshold:
+            t_mid_Ts = (t_T2b_end + TOF_d) / 2
+            ax.annotate(f'{F_Ts_mN:.2f} mN',
+                        xy=(t_mid_Ts, F_Ts_mN),
+                        xytext=(t_mid_Ts, F_Ts_mN + T_max_mN * 0.10),
+                        ha='center', fontsize=7, color='#333',
+                        arrowprops=dict(arrowstyle='-', color='#888', lw=0.6))
+
+    ax.set_ylabel('Thrust [mN]')
+    ax.set_ylim(-T_max_mN * 0.05, T_max_mN * 1.20)
+    ax.legend(loc='upper right', fontsize=7)
+    ax.grid(True, alpha=0.3)
 
     # ── 패널 4: 누적 추진제 소비량 m_prop ──
     ax = axes[3]

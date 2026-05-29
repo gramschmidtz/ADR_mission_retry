@@ -103,11 +103,11 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             f"(test_J.py 로 가능한 범위를 먼저 확인할 수 있습니다.)"
         )
 
-    # ── 추진제 소비 합산 ──
+    # ── 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b) ──
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
-    m_prop_T2b   = phasing['m_after_T2a']   - phasing['m_after_T2b']
-    m_prop_drag  = phasing['m_after_T2b']   - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_T2b + m_prop_drag
+    m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
+    m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
+    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
 
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
 
@@ -143,12 +143,14 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             'Tp' : {
                 'h': phasing['h_P_km'],
                 'tof': phasing['Tp'],
-                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_T2b'],
+                # Tp 동안의 drag 보상 (chronological 첫 번째)
+                'dv': phasing['dv_drag_P'],
+                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_drag'],
             },
             'T2b': {
                 'h_start': phasing['h_P_km'], 'h_end': h_D2,
                 'dv': phasing['dv_T2b'], 'tof': phasing['tof_T2b'],
-                'm_start': phasing['m_after_T2b'], 'm_end': phasing['m_final'],
+                'm_start': phasing['m_after_drag'], 'm_end': phasing['m_final'],
             },
             'Ts' : {
                 'h': h_D2,
@@ -411,6 +413,30 @@ def build_timeline(result, debris1, debris2, params):
     RAAN_D2_arr= np.insert(RAAN_D2_arr, jump_idx, [RAAN_D2_arr[jump_idx-1]])
     thrust     = np.insert(thrust,   jump_idx, [thrust[jump_idx-1]])
 
+    # ── 누적 추진제 m_prop 이력 ──
+    # phase dict 의 mass 변화는 chronological 순서이므로 그대로 합산.
+    #   T1   : chaser+D1 시스템의 T1 추력 소비
+    #   T2a  : chaser 의 T2a 추력 소비
+    #   Tp   : phasing 동안 drag 보상
+    #   T2b  : chaser 의 T2b 추력 소비
+    #   Ts   : 0 (추력 OFF)
+    dm_T1    = phase['T1']['m_start']  - phase['T1']['m_end']
+    dm_T2a   = phase['T2a']['m_start'] - phase['T2a']['m_end']
+    dm_drag  = phase['Tp']['m_start']  - phase['Tp']['m_end']
+    dm_T2b   = phase['T2b']['m_start'] - phase['T2b']['m_end']
+    dm_phase = [dm_T1, dm_T2a, dm_drag, dm_T2b, 0.0]
+
+    # 각 phase 시작 시의 누적 m_prop
+    cum_starts = np.concatenate([[0.0], np.cumsum(dm_phase)[:-1]])
+    m_prop_segs = [
+        np.linspace(cum_starts[k], cum_starts[k] + dm_phase[k], n_pts_list[k])
+        for k in range(5)
+    ]
+    m_prop_raw = concat_segs(m_prop_segs)
+    # D1 방출 시점에서 m_prop 은 점프 없음 (debris 방출 ≠ 추진제 소비) →
+    # 이전 값을 그대로 한 번 더 삽입해 t/alt/mass 와 인덱스 정렬만 맞춤.
+    m_prop_cum = np.insert(m_prop_raw, jump_idx, [m_prop_raw[jump_idx - 1]])
+
     # 구간 경계 [days]
     t_bd = np.array(t_bounds) / 86400.0
     segments = [
@@ -418,7 +444,7 @@ def build_timeline(result, debris1, debris2, params):
         for k, lbl in enumerate(labels)
     ]
 
-    return t, alt, RAAN_SC, RAAN_D2_arr, thrust, mass, segments
+    return t, alt, RAAN_SC, RAAN_D2_arr, thrust, mass, m_prop_cum, segments
 
 
 # ────────────────────────────────────────────────
@@ -432,9 +458,9 @@ def plot_transfer(result, debris1, debris2, params):
     패널 1: 고도 [km] vs 시간 [days]
     패널 2: RAAN [deg] vs 시간
     패널 3: Thrust ON/OFF vs 시간
-    패널 4: 질량 [kg] vs 시간
+    패널 4: 누적 추진제 소비량 m_prop [kg] vs 시간
     """
-    t, alt, RAAN_SC, RAAN_D2, thrust, mass, segments = \
+    t, alt, RAAN_SC, RAAN_D2, thrust, mass, m_prop_cum, segments = \
         build_timeline(result, debris1, debris2, params)
 
     h_disp = params['disposal_alt_km']
@@ -544,27 +570,54 @@ def plot_transfer(result, debris1, debris2, params):
     ax.set_ylabel('Thrust')
     ax.grid(True, alpha=0.3, axis='x')
 
-    # ── 패널 4: 질량 ──
+    # ── 패널 4: 누적 추진제 소비량 m_prop ──
     ax = axes[3]
     draw_backgrounds(ax)
     draw_vlines(ax)
-    ax.plot(t, mass, 'b-', lw=2)
-    # D1 Release 시 질량 점프 표시
-    m_before_release = result['phase']['T1']['m_end']
-    m_after_release  = result['phase']['T2a']['m_start']
-    ax.annotate(
-        f"D1 Release\n(-{debris1['mass']:.0f} kg)",
-        xy=(t_T1_end, m_after_release),
-        xytext=(t_T1_end + TOF_d * 0.04, m_after_release + 20),
-        fontsize=8, color='red',
-        arrowprops=dict(arrowstyle='->', color='red', lw=0.8)
-    )
-    # 질량 점프 수직선
-    ax.plot([t_T1_end, t_T1_end], [m_before_release, m_after_release],
-            'r-', lw=2, alpha=0.8)
-    ax.set_ylabel('Mass [kg]')
+    ax.plot(t, m_prop_cum, 'b-', lw=2, label='Cumulative m_prop')
+
+    # phase 별 추진제 소비량 (phase dict 이 이미 chronological)
+    phase_d  = result['phase']
+    dm_T1    = phase_d['T1']['m_start']  - phase_d['T1']['m_end']
+    dm_T2a   = phase_d['T2a']['m_start'] - phase_d['T2a']['m_end']
+    dm_drag  = phase_d['Tp']['m_start']  - phase_d['Tp']['m_end']
+    dm_T2b   = phase_d['T2b']['m_start'] - phase_d['T2b']['m_end']
+    m_prop_total = result['m_prop']
+
+    # 각 phase 끝점에서의 누적값을 점선으로 표시
+    cum_end = [dm_T1,
+               dm_T1 + dm_T2a,
+               dm_T1 + dm_T2a + dm_drag,
+               dm_T1 + dm_T2a + dm_drag + dm_T2b]
+    for c, color in zip(cum_end, ['#888', '#888', '#888', '#888']):
+        ax.axhline(c, color=color, ls=':', lw=0.7, alpha=0.5)
+
+    # 총량 가이드 라인
+    ax.axhline(m_prop_total, color='red', ls='--', lw=0.8, alpha=0.7,
+               label=f'total = {m_prop_total:.2f} kg')
+
+    # phase 별 소비량 텍스트
+    seg_dm     = [dm_T1, dm_T2a, dm_drag, dm_T2b, 0.0]
+    seg_lbls   = ['T1', 'T2a', 'Tp(drag)', 'T2b', 'Ts']
+    cum_starts_plot = np.concatenate([[0.0], np.cumsum(seg_dm)[:-1]])
+    for k in range(5):
+        if seg_dm[k] <= 0.0:
+            continue
+        t_mid   = (t_bounds_d[k] + t_bounds_d[k+1]) / 2
+        cum_mid = cum_starts_plot[k] + seg_dm[k] / 2
+        ax.text(t_mid, cum_mid,
+                f'{seg_lbls[k]}\n+{seg_dm[k]:.2f}kg',
+                ha='center', va='center', fontsize=7, color='#222',
+                bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='gray',
+                          lw=0.5, alpha=0.85))
+
+    ax.set_ylabel('Cumulative m_prop [kg]')
     ax.set_xlabel('Time [days]')
+    ax.legend(loc='lower right', fontsize=8)
     ax.grid(True, alpha=0.3)
+    # y 범위에 여유 확보 (라벨/타이틀 가독성)
+    y_top = max(m_prop_total * 1.15, m_prop_total + 0.5)
+    ax.set_ylim(-m_prop_total * 0.05, y_top)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()

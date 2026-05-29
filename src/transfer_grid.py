@@ -63,7 +63,7 @@ def _find_best_hP_grid(
     best_h_P : float [km]  최적 phasing orbit 고도
     best_res : dict        evaluate_phasing_orbit 가 반환한 상세 dict
                            (dv_T2a, dv_T2b, dv_drag_P, tof_T2a, Tp, tof_T2b,
-                            m_after_T2a, m_after_T2b, m_final, delta_RAAN 등)
+                            m_after_T2a, m_after_drag, m_final, delta_RAAN 등)
     best_J   : float       해당 h_P 에서의 J 값
     """
     best_J  = np.inf
@@ -180,11 +180,11 @@ def compute_transfer_grid(
             'h_P_grid_km': np.asarray(h_P_grid_km),
         }
 
-    # 각 phase 의 추진제 소비
-    m_prop_T2a   = m_SC_after_T1     - phasing['m_after_T2a']
-    m_prop_T2b   = phasing['m_after_T2a'] - phasing['m_after_T2b']
-    m_prop_drag  = phasing['m_after_T2b'] - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_T2b + m_prop_drag
+    # 각 phase 의 추진제 소비 (chronological 순서: T2a → Tp(drag) → T2b)
+    m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
+    m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
+    m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
+    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
 
     # 총 비행 시간
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts

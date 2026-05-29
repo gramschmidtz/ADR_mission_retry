@@ -114,10 +114,11 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
         )
 
     # ── 추진제 소비 합산 (solve_transfer 동일) ──
+    # 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b)
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
-    m_prop_T2b   = phasing['m_after_T2a']   - phasing['m_after_T2b']
-    m_prop_drag  = phasing['m_after_T2b']   - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_T2b + m_prop_drag
+    m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
+    m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
+    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
 
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
 
@@ -153,12 +154,14 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             'Tp' : {
                 'h': phasing['h_P_km'],
                 'tof': phasing['Tp'],
-                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_T2b'],
+                # Tp 동안의 drag 보상 (chronological 첫 번째)
+                'dv': phasing['dv_drag_P'],
+                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_drag'],
             },
             'T2b': {
                 'h_start': phasing['h_P_km'], 'h_end': h_D2,
                 'dv': phasing['dv_T2b'], 'tof': phasing['tof_T2b'],
-                'm_start': phasing['m_after_T2b'], 'm_end': phasing['m_final'],
+                'm_start': phasing['m_after_drag'], 'm_end': phasing['m_final'],
             },
             'Ts' : {
                 'h': h_D2,

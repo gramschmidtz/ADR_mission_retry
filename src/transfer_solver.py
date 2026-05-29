@@ -576,18 +576,31 @@ def evaluate_phasing_orbit(
     if not np.isfinite(Tp):
         return np.inf, {}
 
-    # --- 추진제 / ΔV 계산 (식 10 기반) ---
-    # T2,a : chaser 단독 연소 (m_after_T2a 는 위에서 이미 계산)
-    dv_T2a      = delta_v_from_mass(m_after_T1, dm_T2a, params)
-    # T2,b : chaser 단독 연소
-    m_after_T2b = m_after_T2a - dm_T2b
-    dv_T2b      = delta_v_from_mass(m_after_T2a, dm_T2b, params)
+    # --- 추진제 / ΔV / 질량 계산 (식 10 기반, chronological 순서) ---
+    #
+    # 시간 순서 : T1 → T2a → Tp(drag) → T2b → Ts
+    #   - T2a : m_after_T1 → m_after_T2a   (이미 위에서 계산)
+    #   - Tp  : m_after_T2a → m_after_drag (대기항력 보상)
+    #   - T2b : m_after_drag → m_final     (chaser 추력 상승)
+    #
+    # 주의 : tof_T2b 는 위에서 m_after_T2a 를 m_before 로 가정해 미리 산출됐다.
+    # 엄밀하게는 T2b 의 m_before 가 m_after_drag (drag 소비 후 질량) 이어야
+    # 하지만, drag 가 T2b 의 RAAN 적분에 영향을 주지 않고 Tp 와 tof_T2b 가
+    # 결합돼 있어 미리 dm_drag 를 모른다. m_after_drag ≈ m_after_T2a 의
+    # 1차 근사를 사용 — 두 질량의 차이는 보통 dm_drag (≪ 1 kg) 정도이므로
+    # tof_T2b / dm_T2b 의 변동은 0.1% 미만이다.
 
-    # drag 보상 (phasing 동안 대기항력으로 인한 추가 추진제 소비)
-    # 논문 식 (26)의 ΔV_P (drag 보상). drag 가속도를 Tp 동안 추력으로 상쇄한다고 가정.
-    # → 필요한 ΔV_drag 를 먼저 계산하고, Tsiolkovsky 로 dm 을 구한다.
-    dv_drag_P = _drag_dv_phasing(h_P_km, Tp, m_after_T2a, params)
-    m_final   = mass_after_burn(m_after_T2b, dv_drag_P, params)
+    dv_T2a       = delta_v_from_mass(m_after_T1, dm_T2a, params)
+
+    # Tp 중 drag 보상 (chronological 첫 번째) — 식 (26) 의 ΔV_P
+    # _drag_dv_phasing 은 가속도 |a_D|(m_after_T2a) · Tp 를 그대로 반환하므로
+    # mass 의존성이 이미 m_after_T2a (Tp 시작 시점 질량) 에 묶여 있다.
+    dv_drag_P    = _drag_dv_phasing(h_P_km, Tp, m_after_T2a, params)
+    m_after_drag = mass_after_burn(m_after_T2a, dv_drag_P, params)
+
+    # T2b 추력 (chronological 두 번째) — m_after_drag 를 m_before 로 사용
+    m_final      = m_after_drag - dm_T2b
+    dv_T2b       = delta_v_from_mass(m_after_drag, dm_T2b, params)
 
     # --- 목적함수 값 계산 (식 26~28) ---
     dv_PT  = dv_T2a + dv_T2b + dv_drag_P           # 식 (26)
@@ -614,10 +627,14 @@ def evaluate_phasing_orbit(
         'dv_PT'     : dv_PT,
         'tof_PT'    : tof_PT,
         'delta_RAAN': delta_RAAN,
-        'm_after_T2a': m_after_T2a,
-        'm_after_T2b': m_after_T2b,
-        'm_final'   : m_final,
-        'J'         : J,
+        # chronological 시점별 chaser 질량 [kg] :
+        #   m_after_T2a  = T2a 끝 = Tp 시작
+        #   m_after_drag = Tp(drag) 끝 = T2b 시작
+        #   m_final      = T2b 끝 = Ts 시작
+        'm_after_T2a' : m_after_T2a,
+        'm_after_drag': m_after_drag,
+        'm_final'     : m_final,
+        'J'           : J,
     }
     return J, result
 
@@ -861,11 +878,11 @@ def solve_transfer(debris1, debris2, m_SC, params, alpha):
         i_rad      = i_rad
     )
 
-    # 추진제 소비 합산
-    m_prop_T2a   = m_SC_after_T1 - phasing['m_after_T2a']
-    m_prop_T2b   = phasing['m_after_T2a'] - phasing['m_after_T2b']
-    m_prop_drag  = phasing['m_after_T2b'] - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_T2b + m_prop_drag
+    # 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b)
+    m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
+    m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
+    m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
+    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
 
     # 총 비행 시간
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
@@ -905,12 +922,14 @@ def solve_transfer(debris1, debris2, m_SC, params, alpha):
             'Tp' : {
                 'h': phasing['h_P_km'],
                 'tof': phasing['Tp'],
-                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_T2b'],
+                # Tp 동안의 drag 보상 (chronological 첫 번째)
+                'dv': phasing['dv_drag_P'],
+                'm_start': phasing['m_after_T2a'], 'm_end': phasing['m_after_drag'],
             },
             'T2b': {
                 'h_start': phasing['h_P_km'], 'h_end': h_D2,
                 'dv': phasing['dv_T2b'], 'tof': phasing['tof_T2b'],
-                'm_start': phasing['m_after_T2b'], 'm_end': phasing['m_final'],
+                'm_start': phasing['m_after_drag'], 'm_end': phasing['m_final'],
             },
             'Ts' : {
                 'h': h_D2,

@@ -41,6 +41,8 @@ from src.transfer_solver import (
     tof_tsiolkovsky,
     propellant_consumed_eq10,
     delta_v_from_mass,
+    drag_dv_circular,
+    mass_after_burn,
 )
 
 
@@ -180,11 +182,18 @@ def compute_transfer_grid(
             'h_P_grid_km': np.asarray(h_P_grid_km),
         }
 
-    # 각 phase 의 추진제 소비 (chronological 순서: T2a → Tp(drag) → T2b)
+    # 각 phase 의 추진제 소비 (chronological 순서: T2a → Tp(drag) → T2b → Ts(drag))
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
     m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
     m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
+
+    # Ts (D2 stay) 동안 대기항력 보상
+    dv_Ts_drag   = drag_dv_circular(h_D2, Ts, phasing['m_final'], params)
+    m_SC_end     = mass_after_burn(phasing['m_final'], dv_Ts_drag, params)
+    m_prop_Ts    = phasing['m_final'] - m_SC_end
+
+    m_prop_total = (m_prop_T1 + m_prop_T2a + m_prop_drag
+                    + m_prop_T2b + m_prop_Ts)
 
     # 총 비행 시간
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
@@ -202,15 +211,17 @@ def compute_transfer_grid(
         'dv_T1'         : dv_T1,
         'dv_T2a'        : phasing['dv_T2a'],
         'dv_T2b'        : phasing['dv_T2b'],
-        'dv_drag'       : phasing['dv_drag_P'],
+        'dv_drag'       : phasing['dv_drag_P'],  # Tp drag
+        'dv_Ts_drag'    : dv_Ts_drag,            # Ts drag
         # 질량 [kg]
         'm_SC_start'    : m_SC,
         'm_SC_after_T1' : m_SC_after_T1,
-        'm_SC_end'      : phasing['m_final'],
+        'm_SC_end'      : m_SC_end,              # Ts drag 후 chaser 최종 질량
         'm_prop_T1'     : m_prop_T1,
         'm_prop_T2a'    : m_prop_T2a,
         'm_prop_T2b'    : m_prop_T2b,
-        'm_prop_drag'   : m_prop_drag,
+        'm_prop_drag'   : m_prop_drag,           # Tp drag 소비
+        'm_prop_Ts'     : m_prop_Ts,             # Ts drag 소비
         'm_prop'        : m_prop_total,
         # phasing 결과
         'h_P_km'        : h_P_star,

@@ -593,9 +593,9 @@ def evaluate_phasing_orbit(
     dv_T2a       = delta_v_from_mass(m_after_T1, dm_T2a, params)
 
     # Tp 중 drag 보상 (chronological 첫 번째) — 식 (26) 의 ΔV_P
-    # _drag_dv_phasing 은 가속도 |a_D|(m_after_T2a) · Tp 를 그대로 반환하므로
+    # drag_dv_circular 는 가속도 |a_D|(m_after_T2a) · Tp 를 그대로 반환하므로
     # mass 의존성이 이미 m_after_T2a (Tp 시작 시점 질량) 에 묶여 있다.
-    dv_drag_P    = _drag_dv_phasing(h_P_km, Tp, m_after_T2a, params)
+    dv_drag_P    = drag_dv_circular(h_P_km, Tp, m_after_T2a, params)
     m_after_drag = mass_after_burn(m_after_T2a, dv_drag_P, params)
 
     # T2b 추력 (chronological 두 번째) — m_after_drag 를 m_before 로 사용
@@ -639,48 +639,42 @@ def evaluate_phasing_orbit(
     return J, result
 
 
-def _drag_dv_phasing(h_P_km, Tp_sec, m, params):
+def drag_dv_circular(h_km, T_sec, m, params):
     """
-    phasing 중 대기항력을 이기는 데 필요한 추가 ΔV를 계산한다.
-    논문 식 (17)~(21) 의 modified equinoctial 형식을 그대로 사용.
+    원궤도에서 일정 시간 동안 누적되는 대기항력 ΔV를 계산한다.
+    논문 식 (17)~(21) 의 modified equinoctial 형식 그대로.
+
+    Tp (phasing 대기) 와 Ts (D2 stay) 양쪽 모두에서 동일한 수학으로 호출된다.
+    chaser 가 추력으로 항력을 상쇄해 고도를 유지한다고 가정하고, 그에
+    필요한 임펄스 ΔV 를 a_drag · T 로 산출한다.
 
     --- 64점 격자 → 단일점 단축 원리 ---
     이전 구현은 L ∈ [0, 2π] 를 64 점 격자로 스윕하여 각 점마다
     keplerian_to_mee + drag_acceleration_lvlh 를 호출 (= 64 회) 하고
     |a_D| 의 한 바퀴 평균을 취했다.
 
-    그러나 phasing orbit 은 원궤도 (e = 0) 이므로 modified equinoctial
-    요소에서 :
+    그러나 원궤도 (e = 0) 에서 modified equinoctial 요소가 :
         f = e · cos(AOP+RAAN) = 0,   g = e · sin(AOP+RAAN) = 0
     이 되어 식 (20), (21) 이 :
         v_r     = √(μ/p) · (f sin L − g cos L) = 0
         v_θ     = √(μ/p) · (1 + f cos L + g sin L) = √(μ/p)
     로 단순화된다. 즉 v_r, v_θ, |v| 모두 L 에 무관한 상수.
-    또한 r = p/q 에서 q = 1 + f cos L + g sin L = 1 → r = p (일정),
-    따라서 ρ(r-Re) 도 일정.
+    또한 r = p/q 에서 q = 1 → r = p (일정), 따라서 ρ(r-Re) 도 일정.
     그러므로 식 (18), (19) 의 |a_D| 는 한 바퀴 동안 완전히 일정 →
     64 점 평균 = 1 점 평가가 수학적으로 정확히 동일하다.
 
     측정상 |a_D| 의 64 점 분산 ≈ 0 (부동소수점 오차 한계 내),
-    1 점 평가 결과는 이전 64 점 평균과 비율 1.000000 으로 일치
-    (h_P = 390/500/800/1200 km 모든 범위에서 검증됨).
-
-    벤치마크 :
-      이 단축으로 한 evaluate_phasing_orbit 당 keplerian_to_mee 호출
-      64 → 1, drag_acceleration_lvlh 호출 64 → 1 로 줄어듬.
-      _drag_dv_phasing 자체 시간 ~12 ms → ~0.6 ms (≈ 20×).
+    1 점 평가 결과는 이전 64 점 평균과 비율 1.000000 으로 일치.
 
     --- 향후 일반화 시 ---
-    만약 phasing orbit 을 e ≠ 0 로 모델링하게 되면 이 단축 가정이
-    깨지므로, L ∈ [0, 2π] 격자 적분 (이전 구현) 으로 되돌려야 한다.
-    그 경우 식 (17)~(21) 모두를 격자 위에서 평가하고 |a_D| 의 한 바퀴
-    평균을 취하면 된다 (스크립트 git history 의 이전 버전 참고).
+    e ≠ 0 궤도에 적용하게 되면 이 단축 가정이 깨지므로 L ∈ [0, 2π]
+    격자 적분 (이전 구현) 으로 되돌려야 한다.
 
     Parameters
     ----------
-    h_P_km  : phasing orbit 고도 [km]
-    Tp_sec  : phasing 시간 [s]
-    m       : chaser 질량 [kg]
+    h_km    : 원궤도 고도 [km]
+    T_sec   : 누적 시간 [s]
+    m       : chaser 질량 [kg]    (a_drag ∝ 1/m 이므로 시점별 질량 사용)
     params  : dict   (mu, Re, CD, S, inclination_deg 포함)
 
     Returns
@@ -689,7 +683,7 @@ def _drag_dv_phasing(h_P_km, Tp_sec, m, params):
     """
     from src.dynamics import keplerian_to_mee, drag_acceleration_lvlh
 
-    if Tp_sec <= 0:
+    if T_sec <= 0:
         return 0.0
 
     mu    = params['mu']
@@ -698,16 +692,16 @@ def _drag_dv_phasing(h_P_km, Tp_sec, m, params):
     S     = params['S']
     i_rad = np.deg2rad(params['inclination_deg'])
 
-    a_P = Re + h_P_km * 1e3   # 반장축 [m]
+    a_circ = Re + h_km * 1e3   # 반장축 [m]
 
     # e=0 원궤도 → L 에 무관하게 |a_D| 일정 → 단일 점 (L=0) 에서 계산
-    mee = keplerian_to_mee(a=a_P, e=0.0, i=i_rad,
+    mee = keplerian_to_mee(a=a_circ, e=0.0, i=i_rad,
                            RAAN=0.0, AOP=0.0, nu=0.0)
     a_D = drag_acceleration_lvlh(mee, mu, CD, S, m, Re)   # [a_Dr, a_Dθ, 0]
     a_drag_mag = float(np.linalg.norm(a_D))
 
-    # Tp 동안 누적 (drag 가속도가 거의 일정)
-    return a_drag_mag * Tp_sec
+    # 시간 T 동안 누적 (drag 가속도가 거의 일정)
+    return a_drag_mag * T_sec
 
 
 def optimize_phasing_orbit(
@@ -878,11 +872,20 @@ def solve_transfer(debris1, debris2, m_SC, params, alpha):
         i_rad      = i_rad
     )
 
-    # 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b)
+    # 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b → Ts(drag))
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
     m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
     m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
+
+    # Ts (D2 stay) 동안 대기항력 보상 — D2 고도에서 Ts 동안 누적 ΔV 를
+    # chaser 추력으로 상쇄하여 고도 유지. 고도 800 km 같은 높은 곳은 거의
+    # 무시할 수준 (~0.001 kg), 500 km 근방에서는 ~0.05 kg 정도.
+    dv_Ts_drag    = drag_dv_circular(h_D2, Ts, phasing['m_final'], params)
+    m_SC_end      = mass_after_burn(phasing['m_final'], dv_Ts_drag, params)
+    m_prop_Ts     = phasing['m_final'] - m_SC_end
+
+    m_prop_total = (m_prop_T1 + m_prop_T2a + m_prop_drag
+                    + m_prop_T2b + m_prop_Ts)
 
     # 총 비행 시간
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
@@ -896,14 +899,15 @@ def solve_transfer(debris1, debris2, m_SC, params, alpha):
         'Ts'      : Ts,
         'TOF'     : TOF,
         # ΔV [m/s]
-        'dv_T1'   : dv_T1,
-        'dv_T2a'  : phasing['dv_T2a'],
-        'dv_T2b'  : phasing['dv_T2b'],
-        'dv_drag' : phasing['dv_drag_P'],
+        'dv_T1'      : dv_T1,
+        'dv_T2a'     : phasing['dv_T2a'],
+        'dv_T2b'     : phasing['dv_T2b'],
+        'dv_drag'    : phasing['dv_drag_P'],   # Tp drag 보상
+        'dv_Ts_drag' : dv_Ts_drag,              # Ts drag 보상
         # 질량 [kg]
-        'm_prop'  : m_prop_total,
+        'm_prop'      : m_prop_total,
         'm_SC_start'  : m_SC,
-        'm_SC_end'    : phasing['m_final'],
+        'm_SC_end'    : m_SC_end,               # Ts drag 후 chaser 최종 질량
         # phasing 결과
         'h_P_km'  : phasing['h_P_km'],
         'delta_RAAN_rad': phasing['delta_RAAN'],
@@ -934,7 +938,9 @@ def solve_transfer(debris1, debris2, m_SC, params, alpha):
             'Ts' : {
                 'h': h_D2,
                 'tof': Ts,
-                'm_start': phasing['m_final'], 'm_end': phasing['m_final'],
+                # Ts 동안의 drag 보상
+                'dv': dv_Ts_drag,
+                'm_start': phasing['m_final'], 'm_end': m_SC_end,
             },
         }
     }

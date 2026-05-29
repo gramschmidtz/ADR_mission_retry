@@ -29,6 +29,8 @@ from src.transfer_solver import (
     tof_tsiolkovsky,
     propellant_consumed_eq10,
     delta_v_from_mass,
+    drag_dv_circular,
+    mass_after_burn,
 )
 
 # 기존 visualize_transfer 의 build_timeline, plot_transfer 재사용
@@ -113,12 +115,18 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             f"test_J.py 로 가능한 범위를 먼저 확인할 수 있습니다."
         )
 
-    # ── 추진제 소비 합산 (solve_transfer 동일) ──
-    # 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b)
+    # ── 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b → Ts(drag)) ──
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
     m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
     m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
+
+    # Ts (D2 stay) 동안 대기항력 보상
+    dv_Ts_drag   = drag_dv_circular(h_D2, Ts, phasing['m_final'], params)
+    m_SC_end     = mass_after_burn(phasing['m_final'], dv_Ts_drag, params)
+    m_prop_Ts    = phasing['m_final'] - m_SC_end
+
+    m_prop_total = (m_prop_T1 + m_prop_T2a + m_prop_drag
+                    + m_prop_T2b + m_prop_Ts)
 
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
 
@@ -130,13 +138,14 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
         'T2b'     : phasing['tof_T2b'],
         'Ts'      : Ts,
         'TOF'     : TOF,
-        'dv_T1'   : dv_T1,
-        'dv_T2a'  : phasing['dv_T2a'],
-        'dv_T2b'  : phasing['dv_T2b'],
-        'dv_drag' : phasing['dv_drag_P'],
-        'm_prop'  : m_prop_total,
-        'm_SC_start'    : m_SC,
-        'm_SC_end'      : phasing['m_final'],
+        'dv_T1'      : dv_T1,
+        'dv_T2a'     : phasing['dv_T2a'],
+        'dv_T2b'     : phasing['dv_T2b'],
+        'dv_drag'    : phasing['dv_drag_P'],   # Tp drag
+        'dv_Ts_drag' : dv_Ts_drag,              # Ts drag
+        'm_prop'     : m_prop_total,
+        'm_SC_start' : m_SC,
+        'm_SC_end'   : m_SC_end,
         'h_P_km'        : phasing['h_P_km'],
         'delta_RAAN_rad': phasing['delta_RAAN'],
         'J'             : J,
@@ -166,7 +175,9 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             'Ts' : {
                 'h': h_D2,
                 'tof': Ts,
-                'm_start': phasing['m_final'], 'm_end': phasing['m_final'],
+                # Ts 동안의 drag 보상
+                'dv': dv_Ts_drag,
+                'm_start': phasing['m_final'], 'm_end': m_SC_end,
             },
         }
     }

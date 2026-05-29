@@ -26,6 +26,7 @@ from src.transfer_solver import (
     delta_v_altitude_change, mass_after_burn,
     evaluate_phasing_orbit, tof_tsiolkovsky,
     propellant_consumed_eq10, delta_v_from_mass,
+    drag_dv_circular,
 )
 
 
@@ -103,11 +104,18 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             f"(test_J.py 로 가능한 범위를 먼저 확인할 수 있습니다.)"
         )
 
-    # ── 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b) ──
+    # ── 추진제 소비 합산 (chronological 순서: T2a → Tp(drag) → T2b → Ts(drag)) ──
     m_prop_T2a   = m_SC_after_T1            - phasing['m_after_T2a']
     m_prop_drag  = phasing['m_after_T2a']   - phasing['m_after_drag']
     m_prop_T2b   = phasing['m_after_drag']  - phasing['m_final']
-    m_prop_total = m_prop_T1 + m_prop_T2a + m_prop_drag + m_prop_T2b
+
+    # Ts (D2 stay) 동안 대기항력 보상
+    dv_Ts_drag   = drag_dv_circular(h_D2, Ts, phasing['m_final'], params)
+    m_SC_end     = mass_after_burn(phasing['m_final'], dv_Ts_drag, params)
+    m_prop_Ts    = phasing['m_final'] - m_SC_end
+
+    m_prop_total = (m_prop_T1 + m_prop_T2a + m_prop_drag
+                    + m_prop_T2b + m_prop_Ts)
 
     TOF = tof_T1 + phasing['tof_T2a'] + phasing['Tp'] + phasing['tof_T2b'] + Ts
 
@@ -119,13 +127,14 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
         'T2b'     : phasing['tof_T2b'],
         'Ts'      : Ts,
         'TOF'     : TOF,
-        'dv_T1'   : dv_T1,
-        'dv_T2a'  : phasing['dv_T2a'],
-        'dv_T2b'  : phasing['dv_T2b'],
-        'dv_drag' : phasing['dv_drag_P'],
-        'm_prop'  : m_prop_total,
-        'm_SC_start'    : m_SC,
-        'm_SC_end'      : phasing['m_final'],
+        'dv_T1'      : dv_T1,
+        'dv_T2a'     : phasing['dv_T2a'],
+        'dv_T2b'     : phasing['dv_T2b'],
+        'dv_drag'    : phasing['dv_drag_P'],   # Tp drag
+        'dv_Ts_drag' : dv_Ts_drag,              # Ts drag
+        'm_prop'     : m_prop_total,
+        'm_SC_start' : m_SC,
+        'm_SC_end'   : m_SC_end,
         'h_P_km'        : phasing['h_P_km'],
         'delta_RAAN_rad': phasing['delta_RAAN'],
         'J'             : J,
@@ -155,7 +164,9 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
             'Ts' : {
                 'h': h_D2,
                 'tof': Ts,
-                'm_start': phasing['m_final'], 'm_end': phasing['m_final'],
+                # Ts 동안의 drag 보상
+                'dv': dv_Ts_drag,
+                'm_start': phasing['m_final'], 'm_end': m_SC_end,
             },
         }
     }
@@ -300,8 +311,8 @@ def build_timeline(result, debris1, debris2, params):
     m_end_T2b   = phase['T2b']['m_end']
     m_segs.append(np.linspace(m_start_T2b, m_end_T2b, n_pts_list[3]))
 
-    # Ts: Coast, 질량 변화 없음
-    m_segs.append(np.full(n_pts_list[4], phase['Ts']['m_start']))
+    # Ts: thrust ON (drag 보상), 질량 미세 감소
+    m_segs.append(np.linspace(phase['Ts']['m_start'], phase['Ts']['m_end'], n_pts_list[4]))
 
     # ── RAAN 이력 (시간 적분 기반) ──
     # 추력 구간(T1, T2a, T2b): a(t) 시간 선형 보간 + Ω̇(a(t)) 사다리꼴 적분
@@ -419,12 +430,13 @@ def build_timeline(result, debris1, debris2, params):
     #   T2a  : chaser 의 T2a 추력 소비
     #   Tp   : phasing 동안 drag 보상
     #   T2b  : chaser 의 T2b 추력 소비
-    #   Ts   : 0 (추력 OFF)
-    dm_T1    = phase['T1']['m_start']  - phase['T1']['m_end']
-    dm_T2a   = phase['T2a']['m_start'] - phase['T2a']['m_end']
-    dm_drag  = phase['Tp']['m_start']  - phase['Tp']['m_end']
-    dm_T2b   = phase['T2b']['m_start'] - phase['T2b']['m_end']
-    dm_phase = [dm_T1, dm_T2a, dm_drag, dm_T2b, 0.0]
+    #   Ts   : D2 stay 동안 drag 보상
+    dm_T1     = phase['T1']['m_start']  - phase['T1']['m_end']
+    dm_T2a    = phase['T2a']['m_start'] - phase['T2a']['m_end']
+    dm_drag   = phase['Tp']['m_start']  - phase['Tp']['m_end']
+    dm_T2b    = phase['T2b']['m_start'] - phase['T2b']['m_end']
+    dm_Ts     = phase['Ts']['m_start']  - phase['Ts']['m_end']
+    dm_phase  = [dm_T1, dm_T2a, dm_drag, dm_T2b, dm_Ts]
 
     # 각 phase 시작 시의 누적 m_prop
     cum_starts = np.concatenate([[0.0], np.cumsum(dm_phase)[:-1]])
@@ -582,6 +594,7 @@ def plot_transfer(result, debris1, debris2, params):
     dm_T2a   = phase_d['T2a']['m_start'] - phase_d['T2a']['m_end']
     dm_drag  = phase_d['Tp']['m_start']  - phase_d['Tp']['m_end']
     dm_T2b   = phase_d['T2b']['m_start'] - phase_d['T2b']['m_end']
+    dm_Ts    = phase_d['Ts']['m_start']  - phase_d['Ts']['m_end']
     m_prop_total = result['m_prop']
 
     # 각 phase 끝점에서의 누적값을 점선으로 표시
@@ -589,19 +602,21 @@ def plot_transfer(result, debris1, debris2, params):
                dm_T1 + dm_T2a,
                dm_T1 + dm_T2a + dm_drag,
                dm_T1 + dm_T2a + dm_drag + dm_T2b]
-    for c, color in zip(cum_end, ['#888', '#888', '#888', '#888']):
-        ax.axhline(c, color=color, ls=':', lw=0.7, alpha=0.5)
+    for c in cum_end:
+        ax.axhline(c, color='#888', ls=':', lw=0.7, alpha=0.5)
 
     # 총량 가이드 라인
     ax.axhline(m_prop_total, color='red', ls='--', lw=0.8, alpha=0.7,
                label=f'total = {m_prop_total:.2f} kg')
 
     # phase 별 소비량 텍스트
-    seg_dm     = [dm_T1, dm_T2a, dm_drag, dm_T2b, 0.0]
-    seg_lbls   = ['T1', 'T2a', 'Tp(drag)', 'T2b', 'Ts']
+    seg_dm     = [dm_T1, dm_T2a, dm_drag, dm_T2b, dm_Ts]
+    seg_lbls   = ['T1', 'T2a', 'Tp(drag)', 'T2b', 'Ts(drag)']
     cum_starts_plot = np.concatenate([[0.0], np.cumsum(seg_dm)[:-1]])
+    # 라벨 표시 임계값 — 너무 작아서 보이지 않는 소비는 라벨 생략
+    dm_label_threshold = max(1e-4, m_prop_total * 1e-3)
     for k in range(5):
-        if seg_dm[k] <= 0.0:
+        if seg_dm[k] < dm_label_threshold:
             continue
         t_mid   = (t_bounds_d[k] + t_bounds_d[k+1]) / 2
         cum_mid = cum_starts_plot[k] + seg_dm[k] / 2

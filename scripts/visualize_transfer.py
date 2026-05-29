@@ -39,7 +39,7 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
     phasing orbit 고도 h_P_km 를 사용자가 직접 지정한다.
 
     내부 구조는 transfer_solver.solve_transfer 와 동일하지만
-    optimize_phasing_orbit (minimize_scalar) 대신
+    optimize_phasing_orbit (grid search) 대신
     evaluate_phasing_orbit 를 단일 h_P_km 에서 한 번만 호출한다.
 
     Parameters
@@ -638,7 +638,7 @@ def main():
     print(f"  D2: alt={d2['alt0_km']:.1f} km, RAAN={d2['RAAN']:.1f}°, mass={d2['mass']:.1f} kg")
     print(f"  α = {alpha}")
     if mode == 'optimal':
-        print(f"  h_P : optimal (minimize_scalar 로 자동 탐색)")
+        print(f"  h_P : optimal (grid search 로 자동 탐색)")
     else:
         print(f"  h_P : {h_P_user:.1f} km (사용자 지정)")
     print(f"{'='*60}")

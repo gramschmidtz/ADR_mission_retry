@@ -2,7 +2,7 @@
 visualize_transfer_manual.py
 ============================
 visualize_transfer.py 와 동일한 4-패널 그래프(논문 Fig. 2)를 그리되,
-phasing orbit 고도 h_P 를 자동 최적화(minimize_scalar)하지 않고
+phasing orbit 고도 h_P 를 자동 최적화(grid search)하지 않고
 사용자가 직접 지정한 값으로 전체 transfer 를 계산한다.
 
 기존 visualize_transfer.py 는 건드리지 않는다.
@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.config_loader import load_params, load_debris_list
 from src.transfer_solver import (
     evaluate_phasing_orbit,
-    tof_hohmann,
+    tof_tsiolkovsky,
     propellant_consumed_eq10,
     delta_v_from_mass,
 )
@@ -50,7 +50,7 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
     phasing orbit 고도 h_P_km 를 사용자가 직접 지정한다.
 
     내부 구조는 transfer_solver.solve_transfer 와 동일하지만
-    optimize_phasing_orbit (minimize_scalar) 대신
+    optimize_phasing_orbit (grid search) 대신
     evaluate_phasing_orbit 를 단일 h_P_km 에서 한 번만 호출한다.
 
     Parameters
@@ -80,7 +80,7 @@ def solve_transfer_fixed_hP(debris1, debris2, m_SC, params, alpha, h_P_km):
     # ── Phase T1: D1 orbit → disposal orbit ──
     # (solve_transfer 와 동일한 식 10 경로)
     m_total_T1       = m_SC + m_D1
-    tof_T1           = tof_hohmann(h_D1, h_disp, params)
+    tof_T1           = tof_tsiolkovsky(h_D1, h_disp, m_total_T1, params)
     m_prop_T1        = propellant_consumed_eq10(tof_T1, params)
     m_total_after_T1 = m_total_T1 - m_prop_T1
     dv_T1            = delta_v_from_mass(m_total_T1, m_prop_T1, params)

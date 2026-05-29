@@ -13,12 +13,11 @@ transfer_solver.py
 핵심 아이디어:
   - 고도 변화(T1, T2)는 thrust를 사용하며 ΔV로 추진제 계산
   - RAAN 변화는 thrust를 쓰지 않고 J2 섭동에 의한 자연 drift 이용
-  - phasing orbit 고도 h_P 를 1D 최적화하여 RAAN을 맞춤 (식 28)
+  - phasing orbit 고도 h_P 를 grid search 로 최적화하여 RAAN을 맞춤 (식 28)
   - eclipse 는 무시 (추력 항상 ON 가정)
 """
 
 import numpy as np
-from scipy.optimize import minimize_scalar
 
 
 # ────────────────────────────────────────────────
@@ -75,8 +74,9 @@ def integrate_raan_thrust_leg(a_start, a_end, T_leg, e, i_rad, params,
     --- 벡터화 최적화 원리 ---
     이전 구현은 list comprehension 으로 raan_drift_rate 를 n_sample (=400) 번
     파이썬 함수 호출했다. 한 번의 evaluate_phasing_orbit 이 3 leg × 400 = 1,200 회
-    호출, optimize_phasing_orbit 의 minimize_scalar 가 ~23 번 evaluate 호출하면
-    한 solve_transfer 당 ~28,000 함수 호출 → 파이썬 함수 호출 오버헤드가 지배적.
+    호출, optimize_phasing_orbit 의 h_P grid (~33 점) 가 그 만큼 evaluate 를
+    돌리면 한 solve_transfer 당 ~40,000 함수 호출 → 파이썬 함수 호출 오버헤드가
+    지배적.
 
     벡터화 :
       식 (22) Ω̇(a) = -1.5 · J2 · √μ · Re² / [a^(7/2) · (1-e²)²] · cos(i)
@@ -701,12 +701,29 @@ def optimize_phasing_orbit(
     params, alpha, i_rad
 ):
     """
-    phasing orbit 고도 h_P를 1D 최적화한다 (논문 Section 2.2.2).
+    phasing orbit 고도 h_P를 grid search 로 최적화한다 (논문 Section 2.2.2).
 
     목적함수: J = α * ΔV_PT + (1-α) * T_PT  (식 28)
-    탐색 범위: h_P ∈ [params['h_P_min_km'], params['h_P_max_km']]
-              (simulation.yaml 의 search 섹션에서 설정; 단 하한은 disposal 고도로
-              clamp — phasing orbit 은 disposal 보다 낮을 수 없음.)
+    탐색 범위: h_P ∈ [params['h_P_min_km'], params['h_P_max_km']],
+              h_step_km 간격 grid (simulation.yaml 의 search 섹션).
+              단 하한은 disposal 고도로 clamp — phasing orbit 은 disposal
+              보다 낮을 수 없음.
+
+    --- 왜 Brent 가 아니라 grid search 인가 ---
+    J(h_P) 는 h_P = h_D2 에서 식 (25) 의 분모 Ω̇_P − Ω̇_D2 가 0 이 되어
+    극(pole) 을 가지며, 그 양쪽으로 단절된 양봉 구조를 보인다 :
+      - 추격 가지 (h_P < h_D2) : h_min 근방에 진짜 최소가 자주 위치
+      - 대기 가지 (h_P > h_D2) : 상한 근방에 가짜 국소 최소가 자주 발생
+    Brent (`scipy.minimize_scalar(method='bounded')`) 는 단봉 가정을 깔고
+    동작하므로, 황금분할 초기 샘플이 우연히 한 가지 안에 모두 떨어지면
+    반대 가지의 진짜 최소를 영영 못 본다. 실제로 debris0001(500km, Ω=100°)
+    → debris0002(800km, Ω=95°) 케이스에서 Brent 가 h_P=2000km(상한)을
+    반환해 TOF ~3700 일이 나오는 버그가 확인됐다 (진짜 최적은
+    h_P=390km, TOF 149 일).
+
+    grid search 는 양 가지를 모두 평가하므로 이 함정에 빠지지 않는다.
+    transfer_grid.compute_transfer_grid 와 동일한 grid 를 사용해 두 경로의
+    결과 일관성을 보장한다.
 
     Parameters
     ----------
@@ -717,51 +734,59 @@ def optimize_phasing_orbit(
     h_D2_km    : D2 고도 [km]
     RAAN_D2_0  : D2 초기 RAAN [rad]
     m_SC_start : chaser 초기 질량 [kg]
-    params     : dict  (h_P_min_km, h_P_max_km 포함)
+    params     : dict  (h_P_min_km, h_P_max_km, h_step_km 포함)
     alpha      : float ∈ [0,1]
     i_rad      : 경사각 [rad]
 
     Returns
     -------
-    best_result : dict  최적 phasing orbit 결과
+    best_result : dict  최적 phasing orbit 의 evaluate_phasing_orbit 결과
     """
     # 탐색 범위 (simulation.yaml 의 search 섹션)
     # 하한은 disposal 고도와 yaml 설정 중 더 큰 값으로 clamp.
-    h_min = max(h_disp_km, params['h_P_min_km'])
-    h_max = params['h_P_max_km']
+    h_min  = max(h_disp_km, params['h_P_min_km'])
+    h_max  = params['h_P_max_km']
+    h_step = params['h_step_km']
     if h_max <= h_min:
         raise ValueError(
             f"h_P_max_km ({h_max:.1f}) 이 h_P_min_km/disposal_alt "
             f"({h_min:.1f}) 이하입니다. simulation.yaml 의 search 섹션을 확인하세요."
         )
 
-    def objective(h_P):
-        J, _ = evaluate_phasing_orbit(
-            h_P,
-            h_D1_km, RAAN_D1_0, m_D1,
-            h_disp_km,
-            h_D2_km, RAAN_D2_0,
-            m_SC_start, params, alpha, i_rad
+    # transfer_grid.compute_transfer_grid 와 동일한 grid 생성
+    # (np.arange 의 우개구간 보정을 위해 step/2 여유)
+    h_P_grid = np.arange(h_min, h_max + h_step / 2, h_step)
+
+    best_J   = np.inf
+    best_res = None
+    for h_P in h_P_grid:
+        J, res = evaluate_phasing_orbit(
+            h_P_km     = float(h_P),
+            h_D1_km    = h_D1_km,
+            RAAN_D1_0  = RAAN_D1_0,
+            m_D1       = m_D1,
+            h_disp_km  = h_disp_km,
+            h_D2_km    = h_D2_km,
+            RAAN_D2_0  = RAAN_D2_0,
+            m_SC_start = m_SC_start,
+            params     = params,
+            alpha      = alpha,
+            i_rad      = i_rad,
         )
-        return J
+        if (res is None) or (not np.isfinite(J)):
+            continue
+        if J < best_J:
+            best_J   = J
+            best_res = res
 
-    # Bounded 방법 1D 최적화
-    res = minimize_scalar(
-        objective,
-        bounds=(h_min, h_max),
-        method='bounded',
-        options={'xatol': 0.1}   # 0.1 km 정밀도
-    )
+    if best_res is None:
+        raise RuntimeError(
+            f"phasing orbit 을 찾을 수 없습니다 (h_P_grid 전체에서 J=inf). "
+            f"D1/D2 조합이 phasing 불가능한지, h_P 탐색 범위가 충분히 넓은지 "
+            f"(simulation.yaml 의 search 섹션) 확인하세요."
+        )
 
-    # 최적 h_P에서 상세 결과 추출
-    _, best_result = evaluate_phasing_orbit(
-        res.x,
-        h_D1_km, RAAN_D1_0, m_D1,
-        h_disp_km,
-        h_D2_km, RAAN_D2_0,
-        m_SC_start, params, alpha, i_rad
-    )
-    return best_result
+    return best_res
 
 
 # ────────────────────────────────────────────────

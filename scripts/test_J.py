@@ -11,9 +11,10 @@ phasing orbit 고도 h_P 를 390 km 부터 1500 km 까지 100 km 단위로 변�
 
 α 는 configs/simulation.yaml 의 training_data.alpha 를 사용한다.
 
-기존 transfer_solver.optimize_phasing_orbit 는 minimize_scalar 로 연속 최적화하지만,
-이 스크립트는 동일한 evaluate_phasing_orbit 함수를 grid 위에서 호출하여
-J 의 형태(곡선)를 시각적으로 확인하는 것이 목적이다.
+transfer_solver.optimize_phasing_orbit 도 동일한 grid search 로 동작하지만,
+이 스크립트는 evaluate_phasing_orbit 함수를 dense grid 위에서 호출하여
+J(h_P) 곡선의 형태(특히 h_P = h_D2 의 극과 양 가지)를 직접 시각화하는
+것이 목적이다.
 
 사용 debris : configs/debris.yaml 의 debris0001 → debris0002
 

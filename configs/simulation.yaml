@@ -47,7 +47,7 @@ visualization:
   debris_file: "configs/debris.yaml"
   debris_pair: ["debris0001", "debris0002"]
   # phasing orbit 고도 [km]
-  #   "optimal" → minimize_scalar 로 최적 h_P 자동 탐색
+  #   "optimal" → grid search 로 최적 h_P 자동 탐색
   #   숫자 (예: 500.0) → 그 고도로 고정해서 계산
   h_P_km: "optimal"
   save_fig: true

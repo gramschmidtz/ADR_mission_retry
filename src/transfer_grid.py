@@ -7,11 +7,12 @@ h_D1, Ω_D1, m_D1, h_D2, Ω_D2, m_SC  →  m_prop, TOF
 즉 ANN 학습 데이터 생성용 ground-truth 함수.
 
 기존 `src.transfer_solver.solve_transfer` 와의 차이:
-    - 본 모듈은 phasing 고도 h_P 를 **grid search** 로 찾는다
-      (transfer_solver 는 `scipy.optimize.minimize_scalar` Brent 방식).
-    - grid 스텝/범위는 simulation.yaml 의 search 섹션을 따른다
-      (`h_P_min_km`, `h_P_max_km`, `h_step_km`).
-    - Brent 의 다봉 J(h_P) jitter (이전 분석에서 본 톱니) 가 없음.
+    - 본 모듈은 (h_D1, Ω_D1, m_D1, h_D2, Ω_D2, m_SC) 를 입력으로 받아 한
+      transfer 의 m_prop, TOF, 부가정보(dict) 를 반환하는 ANN 학습용 인터페이스.
+    - 내부 h_P 최적화는 transfer_solver.optimize_phasing_orbit 와 **동일한
+      grid search** (simulation.yaml 의 h_P_min_km / h_P_max_km / h_step_km).
+      두 솔버는 같은 grid 와 같은 evaluate_phasing_orbit 을 호출하므로
+      동일 입력에 대해 비트 단위로 동일한 결과를 낸다.
 
 논문 §2.2 의 mission profile 전체 (T1 + T2a + Tp + T2b + Ts) 를 합산한
 m_prop, TOF 를 반환한다. ANN 학습용 target 으로 그대로 사용 가능.

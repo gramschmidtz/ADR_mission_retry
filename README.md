@@ -207,8 +207,12 @@ python scripts/evaluate_sequence.py \
 ### Transfer model
 
 - **h_P (phasing orbit 고도) 는 grid search** 로 결정 (Brent 미사용).
-  J(h_P) = α·ΔV + (1-α)·T_PT 가 양봉/절벽 구조라 Brent 가 차선 골짜기에
-  갇히는 문제 회피. 50 km 간격, 33점 grid.
+  J(h_P) 는 h_P = h_D2 에서 식 (25) 의 분모 (Ω̇_P − Ω̇_D2) 가 0 이 되는
+  극을 가지며 양 가지가 단절된 양봉 구조라, Brent
+  (`scipy.minimize_scalar(method='bounded')`) 가 한 가지에 갇혀
+  엉뚱한 h_P (예: 상한 2000 km) 를 반환하는 사례가 확인됨.
+  50 km 간격, 33점 grid 가 `transfer_solver.optimize_phasing_orbit` 과
+  `transfer_grid.compute_transfer_grid` 양쪽에서 모두 동일하게 사용된다.
 - ΔV 산출 : Hohmann two-burn, 부호 무관 절대값 합. TOF 산출 :
   Tsiolkovsky 해석해 + low-thrust 적분 (수치적분 회피로 1200× 가속).
 - RAAN drift 는 식 (22) 의 J₂ 평균 변화율. 적분은 phase 별 사다리꼴.

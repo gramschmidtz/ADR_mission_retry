@@ -67,7 +67,10 @@ class StepLog:
     disposal_alt_km : float
     h_P_km      : float
     m_prop_kg   : float         # 이 transfer 총 추진제
-    TOF_s       : float         # transfer 시간 (T1+T2a+Tp+T2b)
+    TOF_s       : float         # 전체 mission 시간 (T1+T2a+Tp+T2b+Ts).
+                                #   ANN 학습 타깃이 compute_transfer_grid 의
+                                #   'TOF' (Ts 30일 capture 포함) 이므로 ANN 예측,
+                                #   solver 반환값, 그리고 본 필드 모두 Ts 포함 기준.
 
 
 @dataclass

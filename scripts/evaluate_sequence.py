@@ -183,7 +183,16 @@ def reevaluate_with_solver(seq_rows, debris_dict, params, alpha):
             T2a = info['T2a']
             Tp  = info['Tp']
             T2b = info['T2b']
-            sol_TOF = info['TOF'] - info['Ts']   # Ts (capture) 는 별도 처리
+            # sol_TOF 는 ann_TOF 와 같은 기준으로 정의해야 비교가 의미 있음.
+            # ann_TOF 는 sequence search → ANN 예측이고, ANN 의 학습 타깃은
+            # compute_transfer_grid 의 'TOF' (= T1+T2a+Tp+T2b+Ts, 즉 30일 capture
+            # 포함). 따라서 sol_TOF 도 Ts 포함해야 한다.
+            #
+            # (이전 구현은 -info['Ts'] 를 빼서 sol_TOF 가 transfer-only 였고,
+            #  반면 ann_TOF 는 Ts 포함이라 err_TOF_pct 에 step 당 +30 day 의
+            #  체계적 양 편향이 생겨 실제 ANN 오차보다 훨씬 크게 보였음.
+            #  이 라인이 그 버그의 진원지.)
+            sol_TOF = info['TOF']
             sol_mp  = info['m_prop']
             sol_hP  = info['h_P_km']
             # phase 별 추진제 (Fig. 11 m_prop curve 정확화에 사용)
